@@ -13,3 +13,10 @@ export interface Chat {
   updatedAt: number;
   userId: string;
 }
+
+export interface SharedMessage {
+  id: string;
+  content: string;
+  senderEmail: string;
+  timestamp: number;
+}

@@ -4,13 +4,15 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Menu, Settings } from "lucide-react";
+import { Send, Menu, Settings, Mail } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { ChatService } from "@/lib/chat-service";
-import { Chat, Message } from "@/lib/types";
+import { Chat, Message, SharedMessage } from "@/lib/types";
 import { LoadingDots } from "@/components/loading-dots";
+import { ShareModal } from "@/components/share-modal";
+import { MailModal } from "@/components/mail-modal";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -19,6 +21,10 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isMailModalOpen, setIsMailModalOpen] = useState(false);
+  const [selectedMessageToShare, setSelectedMessageToShare] = useState<string>("");
+  const [sharedMessages, setSharedMessages] = useState<SharedMessage[]>([]);
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -40,6 +46,8 @@ export default function ChatPage() {
   useEffect(() => {
     if (user) {
       loadChats();
+      // Add a small delay to ensure user profile is loaded
+      setTimeout(loadSharedMessages, 1000);
     }
   }, [user]);
 
@@ -52,6 +60,18 @@ export default function ChatPage() {
       setChats(userChats);
     } catch (error) {
       console.error('Error loading chats:', error);
+    }
+  };
+
+  const loadSharedMessages = async () => {
+    if (!chatService) return;
+    try {
+      const messages = await chatService.getSharedMessages();
+      setSharedMessages(messages);
+    } catch (error) {
+      // Ignore the error for now, just set empty messages
+      setSharedMessages([]);
+      console.log('Info: No shared messages available yet');
     }
   };
 
@@ -120,6 +140,11 @@ export default function ChatPage() {
     }
   };
 
+  const handleShare = async (email: string) => {
+    if (!chatService) return;
+    await chatService.shareMessage(selectedMessageToShare, email);
+  };
+
   const toggleSidebar = () => {
     setSidebarOpen(!isSidebarOpen);
   };
@@ -149,83 +174,91 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      {/* Overlay for mobile when sidebar is open */}
+    <div className="flex h-screen relative">
+      {/* Overlay for closing sidebar */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-30"
-          onClick={toggleSidebar}
+          className="fixed inset-0 bg-black/50 z-40 transition-opacity"
+          onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Menu Button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="fixed top-4 left-4 z-50 hover:bg-accent"
-        onClick={toggleSidebar}
-      >
-        <Menu className="h-6 w-6" />
-      </Button>
-
       {/* Sidebar */}
       <div
-        className={`
-          fixed left-0 top-0 h-full w-[260px] bg-background border-r border-border
-          transform transition-transform duration-300 ease-in-out z-40
-          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}
+        className={`fixed inset-y-0 left-0 transform ${
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } transition-transform duration-200 ease-in-out flex flex-col w-64 bg-background/80 backdrop-blur-sm border-r z-50`}
       >
-        <div className="pt-16 px-4 border-b border-border pb-4">
-          <Button 
-            className="w-full" 
-            variant="outline"
-            onClick={createNewChat}
-          >
-            New Chat
-          </Button>
+        <div className="p-4 border-b bg-background/90">
+          <h2 className="font-semibold">Chats</h2>
         </div>
-        <ScrollArea className="h-[calc(100vh-12rem)] p-4">
-          <div className="space-y-2">
-            {chats.map((chat) => (
-              <button
-                key={chat.id}
-                onClick={() => loadChat(chat.id)}
-                className={`w-full text-left px-4 py-2 rounded-lg hover:bg-accent transition-colors ${
-                  currentChatId === chat.id ? 'bg-accent' : ''
-                }`}
-              >
-                {chat.title}
-              </button>
-            ))}
+
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-4">
+            <Button 
+              className="w-full" 
+              variant="outline"
+              onClick={createNewChat}
+            >
+              New Chat
+            </Button>
+            <div className="space-y-2">
+              {chats.map((chat) => (
+                <Button
+                  key={chat.id}
+                  variant="ghost"
+                  className={`w-full justify-start ${
+                    chat.id === currentChatId ? "bg-accent" : ""
+                  }`}
+                  onClick={() => loadChat(chat.id)}
+                >
+                  <span className="truncate">{chat.title}</span>
+                </Button>
+              ))}
+            </div>
           </div>
         </ScrollArea>
 
-        {/* Settings Section at Bottom */}
-        <div className="absolute bottom-0 left-0 right-0 border-t border-border p-4 bg-background">
+        <div className="p-4 border-t bg-background/90">
           <div className="flex items-center justify-between">
-            <Button variant="ghost" size="icon" className="hover:bg-accent">
-              <Settings className="h-5 w-5" />
-            </Button>
             <ThemeToggle />
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={handleLogout}
-              className="hover:bg-accent"
-            >
-              Logout
+            <Button variant="ghost" size="icon" onClick={logout}>
+              <Settings className="h-6 w-6" />
             </Button>
           </div>
         </div>
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col pl-16">
-        {/* Chat Messages */}
+      <div className="flex-1 flex flex-col h-full">
+        <div className="flex items-center p-4 border-b">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(!isSidebarOpen)}
+            className="mr-2"
+          >
+            <Menu className="h-6 w-6" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsMailModalOpen(true)}
+            className="relative"
+          >
+            <Mail className="h-6 w-6" />
+            {sharedMessages.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">
+                {sharedMessages.length}
+              </span>
+            )}
+          </Button>
+        </div>
+
+        {/* Messages */}
         <ScrollArea className="flex-1 p-4">
           <div className="max-w-3xl mx-auto space-y-4">
-            {messages.map((message) => (
+            {messages.map((message, index) => (
               <div
                 key={message.id}
                 className={`flex ${
@@ -233,23 +266,27 @@ export default function ChatPage() {
                 }`}
               >
                 <div
-                  className={`max-w-[80%] p-4 rounded-lg ${
+                  className={`relative group max-w-[80%] rounded-lg p-4 ${
                     message.role === "user"
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted"
                   }`}
                 >
                   {message.content}
+                  {message.role === "assistant" && (
+                    <button
+                      onClick={() => {
+                        setSelectedMessageToShare(message.content);
+                        setIsShareModalOpen(true);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 absolute -bottom-6 right-0 text-xs text-muted-foreground hover:text-foreground transition-opacity"
+                    >
+                      Share to friend?
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="max-w-[80%] p-4 rounded-lg bg-muted">
-                  <LoadingDots />
-                </div>
-              </div>
-            )}
             <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
@@ -275,6 +312,19 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        message={selectedMessageToShare}
+        onShare={handleShare}
+      />
+
+      <MailModal
+        isOpen={isMailModalOpen}
+        onClose={() => setIsMailModalOpen(false)}
+        messages={sharedMessages}
+      />
     </div>
   );
 }

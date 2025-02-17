@@ -1,6 +1,6 @@
 import { db } from './firebase';
 import { collection, addDoc, updateDoc, doc, getDoc, getDocs, query, where, orderBy } from 'firebase/firestore';
-import { Chat, Message } from './types';
+import { Chat, Message, SharedMessage } from './types';
 import { getGeminiResponse } from './gemini';
 
 export class ChatService {
@@ -144,6 +144,64 @@ export class ChatService {
       throw new Error('Failed to send message');
     }
   }
+
+  async shareMessage(content: string, recipientEmail: string): Promise<void> {
+    try {
+      // Get sender's email
+      const senderDoc = await getDoc(doc(db, 'users', this.userId));
+      const senderEmail = senderDoc.data()?.email;
+
+      if (!senderEmail) {
+        throw new Error('Sender email not found');
+      }
+
+      // Add to shared_messages collection
+      const sharedMessagesRef = collection(db, 'shared_messages');
+      await addDoc(sharedMessagesRef, {
+        content,
+        senderEmail,
+        recipientEmail,
+        senderId: this.userId,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error('Error sharing message:', error);
+      throw error;
+    }
+  }
+
+  async getSharedMessages(): Promise<SharedMessage[]> {
+    try {
+      // Get user's email first
+      const userDoc = await getDoc(doc(db, 'users', this.userId));
+      const userEmail = userDoc.data()?.email;
+  
+      if (!userEmail) {
+        console.warn('User email is undefined for userId:', this.userId);
+        throw new Error('User email not found');
+      }
+  
+      const sharedMessagesRef = collection(db, 'shared_messages');
+      const q = query(
+        sharedMessagesRef,
+        where('recipientEmail', '==', userEmail),
+        orderBy('timestamp', 'desc')
+      );
+  
+      const snapshot = await getDocs(q);
+  
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        content: doc.data().content,
+        senderEmail: doc.data().senderEmail,
+        timestamp: doc.data().timestamp,
+      }));
+    } catch (error: any) {
+      console.error('Error getting shared messages:', error instanceof Error ? error.message : 'Unknown error');
+      return [];
+    }
+  }
+  
 
   private generateTitle(firstMessage: string): string {
     if (!firstMessage) return 'New Chat';
